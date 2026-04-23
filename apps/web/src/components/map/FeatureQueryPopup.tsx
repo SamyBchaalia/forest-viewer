@@ -13,13 +13,19 @@ interface FeatureQueryPopupProps {
         forest: FeatureInfoResponse | null;
     };
     onClose: () => void;
+    onSelectRegion?: (code: string) => void;
+    onSelectDepartment?: (code: string) => void;
+    onSelectCommune?: (code: string) => void;
 }
 
 export function FeatureQueryPopup({
                                       lng,
                                       lat,
                                       data,
-                                      onClose
+                                      onClose,
+                                      onSelectRegion,
+                                      onSelectDepartment,
+                                      onSelectCommune,
                                   }: FeatureQueryPopupProps) {
     const hasAnyData = data.region || data.department || data.commune || data.forest;
 

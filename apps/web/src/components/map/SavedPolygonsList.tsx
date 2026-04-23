@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { GET_MY_POLYGONS, DELETE_POLYGON_MUTATION } from '@/graphql/polygons';
 import { MapPin, Trash2, Trees, Clock, AlertCircle, Eye, Hexagon } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 
 interface SavedPolygonsListProps {
     onSelectPolygon: (polygon: any) => void;
@@ -28,13 +30,19 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export function SavedPolygonsList({ onSelectPolygon, onHighlightPolygon, selectedPolygonId }: SavedPolygonsListProps) {
-    const { data, loading, refetch } = useQuery(GET_MY_POLYGONS);
-    const [deletePolygon] = useMutation(DELETE_POLYGON_MUTATION);
+    const { data, loading, refetch } = useQuery<{ myPolygons: any[] }>(GET_MY_POLYGONS);
+    const [deletePolygon, { loading: deleting }] = useMutation(DELETE_POLYGON_MUTATION);
+    const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-    const handleDelete = async (id: string, e: React.MouseEvent) => {
+    const handleDeleteClick = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!confirm('Delete this polygon?')) return;
-        await deletePolygon({ variables: { polygonId: id } });
+        setPendingDeleteId(id);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!pendingDeleteId) return;
+        await deletePolygon({ variables: { polygonId: pendingDeleteId } });
+        setPendingDeleteId(null);
         refetch();
     };
 
@@ -72,79 +80,93 @@ export function SavedPolygonsList({ onSelectPolygon, onHighlightPolygon, selecte
         );
     }
 
+    const pendingPolygon = polygons.find((p: any) => p.id === pendingDeleteId);
+
     return (
-        <div>
-            <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Saved zones
-                </span>
-                <span className="text-xs font-bold text-[#0b4a59] bg-[#0b4a59]/8 px-2 py-0.5 rounded-full">
-                    {polygons.length}
-                </span>
-            </div>
+        <>
+            <div>
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Saved zones
+                    </span>
+                    <span className="text-xs font-bold text-[#0b4a59] bg-[#0b4a59]/8 px-2 py-0.5 rounded-full">
+                        {polygons.length}
+                    </span>
+                </div>
 
-            <div className="divide-y divide-gray-50">
-                {polygons.map((polygon: any) => {
-                    const selected = selectedPolygonId === polygon.id;
-                    return (
-                        <div
-                            key={polygon.id}
-                            onClick={() => onSelectPolygon(polygon)}
-                            className={`group relative px-4 py-3 cursor-pointer transition-colors ${
-                                selected
-                                    ? 'bg-[#0b4a59]/5'
-                                    : 'hover:bg-gray-50/80'
-                            }`}
-                        >
-                            {selected && (
-                                <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0b4a59] rounded-r" />
-                            )}
+                <div className="divide-y divide-gray-50">
+                    {polygons.map((polygon: any) => {
+                        const selected = selectedPolygonId === polygon.id;
+                        return (
+                            <div
+                                key={polygon.id}
+                                onClick={() => onSelectPolygon(polygon)}
+                                className={`group relative px-4 py-3 cursor-pointer transition-colors ${
+                                    selected ? 'bg-[#0b4a59]/5' : 'hover:bg-gray-50/80'
+                                }`}
+                            >
+                                {selected && (
+                                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-[#0b4a59] rounded-r" />
+                                )}
 
-                            <div className="flex items-start gap-3">
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                                    selected ? 'bg-[#0b4a59]/10' : 'bg-gray-100 group-hover:bg-[#0b4a59]/8'
-                                } transition-colors`}>
-                                    <MapPin size={13} className={selected ? 'text-[#0b4a59]' : 'text-gray-400'} />
-                                </div>
+                                <div className="flex items-start gap-3">
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                        selected ? 'bg-[#0b4a59]/10' : 'bg-gray-100 group-hover:bg-[#0b4a59]/8'
+                                    } transition-colors`}>
+                                        <MapPin size={13} className={selected ? 'text-[#0b4a59]' : 'text-gray-400'} />
+                                    </div>
 
-                                <div className="flex-1 min-w-0">
-                                    <p className={`text-sm font-semibold truncate ${selected ? 'text-[#0b4a59]' : 'text-gray-800'}`}>
-                                        {polygon.name}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                        <span className="text-[11px] text-gray-400 tabular-nums">
-                                            {polygon.areaHectares?.toFixed(2) ?? '—'} ha
-                                        </span>
-                                        <StatusBadge status={polygon.status} />
-                                        {polygon.analysisResults?.totalForestArea != null && (
-                                            <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
-                                                {polygon.analysisResults.totalForestArea.toFixed(1)} ha forest
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`text-sm font-semibold truncate ${selected ? 'text-[#0b4a59]' : 'text-gray-800'}`}>
+                                            {polygon.name}
+                                        </p>
+                                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                            <span className="text-[11px] text-gray-400 tabular-nums">
+                                                {polygon.areaHectares?.toFixed(2) ?? '—'} ha
                                             </span>
-                                        )}
+                                            <StatusBadge status={polygon.status} />
+                                            {polygon.analysisResults?.totalForestArea != null && (
+                                                <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">
+                                                    {polygon.analysisResults.totalForestArea.toFixed(1)} ha forest
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                        <button
+                                            onClick={(e) => handleShow(polygon, e)}
+                                            title="Show on map"
+                                            className="p-1.5 text-[#0b4a59] hover:bg-[#0b4a59]/10 rounded-lg transition-colors"
+                                        >
+                                            <Eye size={13} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDeleteClick(polygon.id, e)}
+                                            title="Delete"
+                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
                                     </div>
                                 </div>
-
-                                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                    <button
-                                        onClick={(e) => handleShow(polygon, e)}
-                                        title="Show on map"
-                                        className="p-1.5 text-[#0b4a59] hover:bg-[#0b4a59]/10 rounded-lg transition-colors"
-                                    >
-                                        <Eye size={13} />
-                                    </button>
-                                    <button
-                                        onClick={(e) => handleDelete(polygon.id, e)}
-                                        title="Delete"
-                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                    >
-                                        <Trash2 size={13} />
-                                    </button>
-                                </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
-        </div>
+
+            <ConfirmDialog
+                open={!!pendingDeleteId}
+                onClose={() => setPendingDeleteId(null)}
+                onConfirm={handleDeleteConfirm}
+                title="Delete zone?"
+                message={`"${pendingPolygon?.name ?? 'This zone'}" and its analysis results will be permanently removed.`}
+                confirmLabel="Delete"
+                cancelLabel="Keep it"
+                variant="danger"
+                loading={deleting}
+            />
+        </>
     );
 }

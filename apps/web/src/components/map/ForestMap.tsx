@@ -510,10 +510,10 @@ export function ForestMap() {
 
         if (validPolygons.length === 0) return;
 
-        const geojson = {
+        const geojson: GeoJSON.FeatureCollection = {
             type: 'FeatureCollection',
             features: validPolygons.map((p) => ({
-                type: 'Feature',
+                type: 'Feature' as const,
                 id: p.id,
                 geometry: p.geometry,
                 properties: { name: p.name, area: p.areaHectares, status: p.status },
