@@ -1,11 +1,15 @@
 import { Resolver, Query, Args } from '@nestjs/graphql';
-import { GeospatialService } from './geospatial.service';
+import { Inject } from '@nestjs/common';
 import { ForestPlotsFilterInput } from './dto/geospatial.input';
 import { ForestPlotType } from './dto/geospatial.types';
+import { GEOSPATIAL_SERVICE } from './geospatial.service.interface';
+import { IGeospatialService } from './geospatial.service.interface';
 
 @Resolver()
 export class GeospatialResolver {
-    constructor(private geoService: GeospatialService) {}
+    constructor(
+        @Inject(GEOSPATIAL_SERVICE) private readonly geoService: IGeospatialService,
+    ) {}
 
     @Query(() => [String])
     async regions(): Promise<string[]> {
@@ -37,6 +41,6 @@ export class GeospatialResolver {
     async forestPlots(
         @Args('filters', { nullable: true }) filters: ForestPlotsFilterInput,
     ): Promise<ForestPlotType[]> {
-        return this.geoService.getForestPlots(filters || {});
+        return this.geoService.getForestPlots(filters || {}) as Promise<ForestPlotType[]>;
     }
 }
