@@ -24,8 +24,8 @@ import { Request, Response } from 'express';
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
       entities: [User, ForestPlot, UserPolygon],
-      synchronize: process.env.NODE_ENV === 'development', // Auto-create tables in dev
-      logging: process.env.NODE_ENV === 'development',
+      synchronize: process.env.NODE_ENV === 'development',
+      logging: false,
     }),
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,

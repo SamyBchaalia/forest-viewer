@@ -39,19 +39,50 @@ export class PolygonsService {
 
     private async runAnalysis(polygonId: string, areaHectares: number): Promise<any> {
         try {
-            // ST_Transform normalizes forest_plots.geom to SRID 4326 before comparison.
-            // This handles data loaded in Lambert-93 (EPSG:2154) or any other SRID without
-            // an explicit reprojection step at load time.
+            // Detect the actual SRID the forest data was stored with. BD Forêt V2 is often
+            // loaded from shapefiles without reprojection, leaving Lambert-93 (EPSG:2154)
+            // coordinates in a column whose metadata says 4326. ST_Transform(geom, 4326)
+            // is a no-op in that case because PostGIS trusts the metadata. The correct fix
+            // is to transform the user's polygon (always 4326) into whatever SRID the
+            // forest data actually uses, then let PostGIS intersect in that native space.
+            const [meta] = await this.dataSource.query(
+                `SELECT ST_SRID(geom) AS srid, COUNT(*)::int AS total
+                 FROM forest_plots
+                 WHERE geom IS NOT NULL
+                 GROUP BY ST_SRID(geom)
+                 ORDER BY COUNT(*) DESC
+                 LIMIT 1`,
+            );
+            const forestSrid: number = meta?.srid ?? 4326;
+            const totalPlots: number = meta?.total ?? 0;
+            console.log(`[runAnalysis] forest_plots: ${totalPlots} rows, SRID=${forestSrid}`);
+
+            // Log user polygon extent and forest plots extent so mismatches are visible
+            const [extents] = await this.dataSource.query(
+                `SELECT
+                     ST_AsText(ST_Envelope((SELECT geometry FROM user_polygons WHERE id = $1))) AS user_bbox,
+                     ST_AsText(ST_Extent(geom)) AS forest_bbox
+                 FROM forest_plots`,
+                [polygonId],
+            );
+            console.log(`[runAnalysis] user polygon bbox : ${extents?.user_bbox}`);
+            console.log(`[runAnalysis] forest_plots bbox : ${extents?.forest_bbox}`);
+
+            // Always tag the user polygon as 4326 before transforming, because the geometry
+            // column can come back with SRID 0 from a subquery and ST_Transform refuses to
+            // transform an SRID-0 geometry ("could not parse proj string '4326'").
+            const userGeomExpr =
+                forestSrid === 4326
+                    ? `ST_SetSRID((SELECT geometry FROM user_polygons WHERE id = $1), 4326)`
+                    : `ST_Transform(ST_SetSRID((SELECT geometry FROM user_polygons WHERE id = $1), 4326), ${forestSrid})`;
+
             const plots = await this.dataSource.query(
                 `SELECT
                      COALESCE(surface_hectares, 0) AS "surfaceHectares",
                      type_foret                    AS "typeForet",
                      essences
                  FROM forest_plots
-                 WHERE ST_Intersects(
-                     ST_Transform(geom, 4326),
-                     (SELECT geometry FROM user_polygons WHERE id = $1)
-                 )
+                 WHERE ST_Intersects(geom, ${userGeomExpr})
                  LIMIT 5000`,
                 [polygonId],
             );
@@ -67,13 +98,24 @@ export class PolygonsService {
                 ...new Set<string>(plots.map((p: any) => p.typeForet).filter(Boolean)),
             ];
 
-            // Distribute surface area evenly across all essences listed per plot
+            // Distribute surface area across essences. BD Forêt V1 has no essences column,
+            // so fall back to aggregating by forest type (type_foret) instead.
             const speciesMap = new Map<string, number>();
+            let hasEssences = false;
             for (const plot of plots) {
                 const essences: string[] = Array.isArray(plot.essences) ? plot.essences : [];
+                if (essences.length > 0) hasEssences = true;
                 const share = (parseFloat(plot.surfaceHectares) || 0) / (essences.length || 1);
                 for (const species of essences) {
                     if (species) speciesMap.set(species, (speciesMap.get(species) || 0) + share);
+                }
+            }
+
+            // V1 fallback: aggregate area by forest type
+            if (!hasEssences) {
+                for (const plot of plots) {
+                    const key = plot.typeForet || 'Unknown';
+                    speciesMap.set(key, (speciesMap.get(key) || 0) + (parseFloat(plot.surfaceHectares) || 0));
                 }
             }
 
