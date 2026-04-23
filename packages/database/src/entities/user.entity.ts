@@ -34,6 +34,9 @@ export class User {
     @Column('jsonb', { nullable: true })
     lastFilters?: Record<string, any>;
 
+    @Column('varchar', { array: true, nullable: true })
+    lastActiveLayers?: string[];
+
     @CreateDateColumn()
     createdAt!: Date;
 

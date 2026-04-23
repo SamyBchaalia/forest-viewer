@@ -26,4 +26,7 @@ export class UserModel {
 
     @Field(() => GraphQLJSON, { nullable: true })
     lastFilters?: Record<string, any>;
+
+    @Field(() => [String], { nullable: true })
+    lastActiveLayers?: string[];
 }

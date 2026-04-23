@@ -8,7 +8,8 @@ import { join } from 'path';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GeospatialModule } from './geospatial/geospatial.module';
-import { User, ForestPlot } from '@forest/database';
+import { PolygonsModule } from './polygons/polygons.module';
+import { User, ForestPlot, UserPolygon } from '@forest/database';
 import { Request, Response } from 'express';
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { Request, Response } from 'express';
       username: process.env.DATABASE_USERNAME,
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
-      entities: [User, ForestPlot],
+      entities: [User, ForestPlot, UserPolygon],
       synchronize: process.env.NODE_ENV === 'development', // Auto-create tables in dev
       logging: process.env.NODE_ENV === 'development',
     }),
@@ -37,6 +38,7 @@ import { Request, Response } from 'express';
     AuthModule,
     UsersModule,
     GeospatialModule,
+    PolygonsModule,
   ],
 })
 export class AppModule {}

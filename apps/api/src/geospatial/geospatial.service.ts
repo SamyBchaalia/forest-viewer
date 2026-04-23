@@ -3,9 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ForestPlot } from '@forest/database';
 import { ForestPlotsFilterInput } from './dto/geospatial.input';
+import { IGeospatialService } from './geospatial.service.interface';
 
 @Injectable()
-export class GeospatialService {
+export class GeospatialService implements IGeospatialService {
     constructor(
         @InjectRepository(ForestPlot)
         private forestRepo: Repository<ForestPlot>,
@@ -51,20 +52,18 @@ export class GeospatialService {
         return result.map((r: any) => r.lieu).filter(Boolean);
     }
 
-    async getForestPlots(filters: ForestPlotsFilterInput) {
+    async getForestPlots(filters: ForestPlotsFilterInput): Promise<unknown[]> {
         const query = this.forestRepo
             .createQueryBuilder('plot')
-            .select([
-                'plot.id',
-                'plot.codeRegion',
-                'plot.codeDepartement',
-                'plot.codeCommune',
-                'plot.lieuDit',
-                'plot.essences',
-                'plot.surfaceHectares',
-                'plot.typeForet',
-                'ST_AsGeoJSON(plot.geom)::json as geometry',
-            ]);
+            .select('plot.id', 'id')
+            .addSelect('plot.codeRegion', 'codeRegion')
+            .addSelect('plot.codeDepartement', 'codeDepartement')
+            .addSelect('plot.codeCommune', 'codeCommune')
+            .addSelect('plot.lieuDit', 'lieuDit')
+            .addSelect('plot.essences', 'essences')
+            .addSelect('plot.surfaceHectares', 'surfaceHectares')
+            .addSelect('plot.typeForet', 'typeForet')
+            .addSelect('ST_AsGeoJSON(plot.geom)::json', 'geometry');
 
         if (filters.regionCode) {
             query.andWhere('plot.codeRegion = :regionCode', { regionCode: filters.regionCode });

@@ -1,5 +1,5 @@
 import { InputType, Field, Float } from '@nestjs/graphql';
-import { IsNumber, IsOptional, IsObject } from 'class-validator';
+import { IsNumber, IsOptional, IsObject, IsArray, IsString } from 'class-validator';
 
 @InputType()
 export class MapFiltersInput {
@@ -38,4 +38,10 @@ export class MapStateInput {
     @IsObject()
     @IsOptional()
     filters?: MapFiltersInput;
+
+    @Field(() => [String], { nullable: true })
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    activeLayers?: string[];
 }

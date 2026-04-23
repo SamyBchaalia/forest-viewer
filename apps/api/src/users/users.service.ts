@@ -21,6 +21,7 @@ export class UsersService {
             lastLat: input.lat,
             lastZoom: input.zoom,
             lastFilters: input.filters as Record<string, any>,
+            lastActiveLayers: input.activeLayers,
         });
 
         const user = await this.findById(userId);

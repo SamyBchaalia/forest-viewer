@@ -2,6 +2,14 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type AnalysisResultsType {
+  coveragePercentage: Float
+  forestTypes: [String!]
+  plotCount: Int
+  speciesDistribution: [SpeciesDistributionType!]
+  totalForestArea: Float
+}
+
 type AuthPayload {
   token: String!
   user: UserModel!
@@ -13,6 +21,11 @@ input BoundsInput {
   minLat: Float!
   minLng: Float!
 }
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
 
 type ForestPlotType {
   codeCommune: String!
@@ -42,6 +55,9 @@ The `JSON` scalar type represents JSON values as specified by [ECMA-404](http://
 """
 scalar JSON
 
+"""Arbitrary JSON value"""
+scalar JSONObject
+
 input LoginInput {
   email: String!
   password: String!
@@ -55,6 +71,7 @@ input MapFiltersInput {
 }
 
 input MapStateInput {
+  activeLayers: [String!]
   filters: MapFiltersInput
   lat: Float!
   lng: Float!
@@ -62,10 +79,22 @@ input MapStateInput {
 }
 
 type Mutation {
+  deletePolygon(polygonId: String!): Boolean!
   login(input: LoginInput!): AuthPayload!
   logout: Boolean!
   register(input: RegisterInput!): AuthPayload!
+  savePolygon(input: SavePolygonInput!): PolygonType!
   updateMapState(input: MapStateInput!): UserModel!
+}
+
+type PolygonType {
+  analysisResults: AnalysisResultsType
+  areaHectares: Float!
+  createdAt: DateTime!
+  geometry: JSONObject
+  id: String!
+  name: String!
+  status: String!
 }
 
 type Query {
@@ -74,6 +103,7 @@ type Query {
   forestPlots(filters: ForestPlotsFilterInput): [ForestPlotType!]!
   lieuxDits(communeCode: String!): [String!]!
   me: UserModel!
+  myPolygons: [PolygonType!]!
   regions: [String!]!
 }
 
@@ -84,10 +114,22 @@ input RegisterInput {
   password: String!
 }
 
+input SavePolygonInput {
+  geometry: JSONObject!
+  name: String!
+}
+
+type SpeciesDistributionType {
+  areaHectares: Float!
+  percentage: Float!
+  species: String!
+}
+
 type UserModel {
   email: String!
   firstName: String
   id: ID!
+  lastActiveLayers: [String!]
   lastFilters: JSON
   lastLat: Float
   lastLng: Float

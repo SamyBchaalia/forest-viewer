@@ -9,7 +9,8 @@ interface User {
     lastLng?: number;
     lastLat?: number;
     lastZoom?: number;
-    lastFilters?: Record<string, any>;
+    lastFilters?: Record<string, string>;
+    lastActiveLayers?: string[];
 }
 
 interface AuthState {
@@ -29,7 +30,7 @@ export const useAuthStore = create<AuthState>()(
             user: null,
             token: null,
             isAuthenticated: false,
-            isLoading: true,
+            isLoading: false,
 
             setAuth: (user, token) => {
                 localStorage.setItem('token', token);

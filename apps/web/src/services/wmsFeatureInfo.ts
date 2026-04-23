@@ -32,11 +32,10 @@ export const getFeatureInfo = async (
 ): Promise<FeatureInfoResponse | null> => {
     const point = map.project([lng, lat]);
     const bounds = map.getBounds();
+    if (!bounds) return null;
 
     // Convert bounds to EPSG:3857
-    // @ts-ignore
     const [minx, miny] = lngLatTo3857(bounds.getWest(), bounds.getSouth());
-    // @ts-ignore
     const [maxx, maxy] = lngLatTo3857(bounds.getEast(), bounds.getNorth());
 
 

@@ -27,6 +27,7 @@ export const LOGIN_MUTATION = gql`
         lastLat
         lastZoom
         lastFilters
+        lastActiveLayers
       }
     }
   }
@@ -43,6 +44,7 @@ export const ME_QUERY = gql`
       lastLat
       lastZoom
       lastFilters
+      lastActiveLayers
     }
   }
 `;
@@ -55,6 +57,7 @@ export const UPDATE_MAP_STATE = gql`
       lastLat
       lastZoom
       lastFilters
+      lastActiveLayers
     }
   }
 `;
