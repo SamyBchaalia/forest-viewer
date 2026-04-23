@@ -1,3 +1,7 @@
+# BD Forêt raw archives (large binary files, download via data/download.sh)
+data/bd-foret/raw/*.7z
+data/bd-foret/raw/*.zip
+
 # Node.js dependencies
 node_modules/
 npm-debug.log

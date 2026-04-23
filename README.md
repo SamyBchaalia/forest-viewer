@@ -24,8 +24,12 @@ forest-bd-viewer/
 ├── apps/
 │   ├── api/        # NestJS GraphQL API (port 4000)
 │   └── web/        # Next.js frontend (port 3000)
-└── packages/
-    └── database/   # Shared TypeORM entities
+├── packages/
+│   └── database/   # Shared TypeORM entities
+└── data/
+    ├── import.sh   # BD Forêt archive loader (see §5)
+    └── bd-foret/
+        └── raw/    # Drop .7z archives here (gitignored)
 ```
 
 ---
@@ -154,8 +158,58 @@ npm run dev          # Next.js dev server with hot reload
 
 ---
 
-## 5. First-Time Login
+## 5. Load Forest Data
 
+The map is empty until you load BD Forêt data. The app ships with a downloader and importer for IGN's open dataset.
+
+### Quick start — all 4 regions at once
+
+```bash
+./data/download.sh
+```
+
+This downloads and imports all 28 departments across the 4 regions available in the filter panel (Normandie, Pays de la Loire, Centre-Val de Loire, Auvergne-Rhône-Alpes). Archives are fetched directly from [IGN's Géoplateforme](https://data.geopf.fr/telechargement/resource/BDFORET) (~300 MB total). Already-downloaded archives are skipped so the script is safe to re-run.
+
+```bash
+./data/download.sh --truncate       # wipe existing data first, then load all
+./data/download.sh --download-only  # download archives without importing
+./data/download.sh --import-only    # import previously downloaded archives
+```
+
+### Load a single department
+
+```bash
+./data/import.sh data/bd-foret/raw/BDFORET_1-0__SHP_LAMB93_D014_2014-04-01.7z
+```
+
+The import script:
+- Auto-detects the department code from the filename
+- Reprojects from Lambert-93 → WGS84
+- Loads into `forest_plots` with computed hectares
+- Prints a summary of forest types loaded
+
+### Seed data (development only)
+
+If you don't want to download real archives, a synthetic seed populates ~3150 plots across Normandie, Pays de la Loire and Centre-Val de Loire:
+
+```bash
+cd apps/api && npm run seed
+```
+
+### Data coverage
+
+| Region | Departments | ~Plots |
+|---|---|---|
+| Auvergne-Rhône-Alpes | 01 03 07 15 26 38 42 43 63 69 73 74 | ~70 000 |
+| Normandie | 14 27 50 61 76 | ~25 000 |
+| Pays de la Loire | 44 49 53 72 85 | ~20 000 |
+| Centre-Val de Loire | 18 28 36 37 41 45 | ~20 000 |
+
+> The data is BD Forêt V1 (IGN, 2013–2014). It contains vegetation formation types (`type_foret`) but not individual species — the Forest Composition chart in the app shows formation types for V1 data.
+
+---
+
+## 6. First-Time Login
 The app requires an account. Register via the sign-up form at http://localhost:3000. There is no seed script — the first user you register becomes the initial account.
 
 ---
