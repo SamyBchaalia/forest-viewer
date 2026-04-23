@@ -6,8 +6,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { REGISTER_MUTATION } from '@/graphql/auth';
+import type { RegisterResponse, RegisterVariables } from '@/graphql/types';
 import { useAuthStore } from '@/store/authStore';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 const registerSchema = z.object({
     email: z.string().email('Invalid email address'),
@@ -31,121 +32,133 @@ export function RegisterForm({ onToggle }: RegisterFormProps) {
         resolver: zodResolver(registerSchema),
     });
 
-    const [registerMutation, { loading }] = useMutation(REGISTER_MUTATION);
+    const [registerMutation, { loading }] = useMutation<RegisterResponse, RegisterVariables>(REGISTER_MUTATION);
 
     const onSubmit = async (data: RegisterFormData) => {
         try {
             setError('');
-            // Remove empty strings
             const input = {
                 email: data.email,
                 password: data.password,
                 firstName: data.firstName || undefined,
                 lastName: data.lastName || undefined,
             };
-
-            const result = await registerMutation({
-                variables: { input },
-            });
-
-            // @ts-ignore
-            const { token, user } = result.data.register;
+            const result = await registerMutation({ variables: { input } });
+            const { token, user } = result.data!.register;
             setAuth(user, token);
         } catch (err: any) {
             setError(err.message || 'Registration failed. Email may already be in use.');
         }
     };
 
+    const busy = loading || isSubmitting;
+
     return (
-        <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg border border-gray-100">
-            <div className="text-center">
-                <h2 className="text-3xl font-bold text-gray-900">Create account</h2>
-                <p className="mt-2 text-sm text-gray-600">Start exploring French forest data</p>
+        <div className="glass-card p-8 space-y-6">
+            <div>
+                <h2 className="text-2xl font-bold text-gray-900">Create an account</h2>
+                <p className="mt-1 text-sm text-gray-500">Start exploring French forest data today</p>
             </div>
 
             {error && (
-                <div className="p-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
-                    {error}
+                <div className="flex items-start gap-2.5 p-3.5 text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5 text-red-500" />
+                    <span>{error}</span>
                 </div>
             )}
 
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                            First name
+                        </label>
                         <input
                             {...register('firstName')}
                             placeholder="Jean"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                            className="input-field"
                         />
                         {errors.firstName && (
-                            <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
+                            <p className="text-xs text-red-500 flex items-center gap-1">
+                                <AlertCircle size={11} />
+                                {errors.firstName.message}
+                            </p>
                         )}
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                    <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                            Last name
+                        </label>
                         <input
                             {...register('lastName')}
                             placeholder="Dupont"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                            className="input-field"
                         />
                         {errors.lastName && (
-                            <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
+                            <p className="text-xs text-red-500 flex items-center gap-1">
+                                <AlertCircle size={11} />
+                                {errors.lastName.message}
+                            </p>
                         )}
                     </div>
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+                <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Email address
+                    </label>
                     <input
                         {...register('email')}
                         type="email"
                         placeholder="you@example.com"
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                        className="input-field"
                     />
                     {errors.email && (
-                        <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                            <AlertCircle size={11} />
+                            {errors.email.message}
+                        </p>
                     )}
                 </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                        Password
+                    </label>
                     <div className="relative">
                         <input
                             {...register('password')}
                             type={showPassword ? 'text' : 'password'}
                             placeholder="••••••••"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all "
+                            className="input-field pr-10"
                         />
                         <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                         >
-                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                     </div>
                     {errors.password && (
-                        <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                            <AlertCircle size={11} />
+                            {errors.password.message}
+                        </p>
                     )}
                 </div>
 
-                <button
-                    type="submit"
-                    disabled={loading || isSubmitting}
-                    className="w-full px-4 py-2.5 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2 hover:opacity-90"
-                    style={{ backgroundColor: '#0b4a59' }}>
-                    {(loading || isSubmitting) && <Loader2 className="animate-spin" size={18} />}
-                    Create Account
+                <button type="submit" disabled={busy} className="btn-primary mt-2">
+                    {busy && <Loader2 className="animate-spin" size={16} />}
+                    {busy ? 'Creating account…' : 'Create account'}
                 </button>
             </form>
 
-            <p className="text-center text-sm text-gray-600">
+            <p className="text-center text-sm text-gray-500">
                 Already have an account?{' '}
                 <button
                     onClick={onToggle}
-                    className="text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors"
-                    style={{ color: '#0b4a59' }}
+                    className="font-semibold text-[#0b4a59] hover:text-[#083845] transition-colors hover:underline underline-offset-2"
                 >
                     Sign in
                 </button>

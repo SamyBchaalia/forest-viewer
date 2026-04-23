@@ -5,11 +5,19 @@ import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
-import { useQuery, useMutation } from '@apollo/client/react';
-import { useMapStore } from '@/store/mapStore';
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
+import { useMapStore, MapFilters } from '@/store/mapStore';
+import { apolloClient } from '@/lib/apollo-client';
 import { useAuthStore } from '@/store/authStore';
 import { UPDATE_MAP_STATE } from '@/graphql/auth';
 import { GET_MY_POLYGONS, SAVE_POLYGON_MUTATION } from '@/graphql/polygons';
+import { GET_FOREST_PLOTS } from '@/graphql/geospatial';
+import type {
+    UpdateMapStateResponse, UpdateMapStateVariables,
+    SavePolygonResponse, SavePolygonVariables,
+    MyPolygonsResponse,
+    ForestPlotsResponse, ForestPlotsVariables,
+} from '@/graphql/types';
 import { queryAllLayers } from '@/services/wmsFeatureInfo';
 import { WMS_LAYERS, getWMSTileUrl, WMSLayerConfig } from '@/services/wmsLayers';
 
@@ -20,7 +28,7 @@ import { SavedPolygonsList } from './SavedPolygonsList';
 import { LayerControlPanel } from './LayerControlPanel';
 import { FeatureQueryPopup } from './FeatureQueryPopup';
 
-import { Layers, LogOut, Map as MapIcon, Satellite, Mountain, Sun, Moon } from 'lucide-react';
+import { Layers, LogOut, Map as MapIcon, Satellite, Mountain, Sun, Moon, Pencil, TreePine, MapPin } from 'lucide-react';
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
@@ -78,16 +86,49 @@ export function ForestMap() {
         data: any;
     } | null>(null);
 
+    const [viewportBounds, setViewportBounds] = useState<{
+        minLng: number; minLat: number; maxLng: number; maxLat: number;
+    } | null>(null);
+    const [leftTab, setLeftTab] = useState<'explorer' | 'polygons'>('explorer');
+
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<mapboxgl.Map | null>(null);
     const draw = useRef<MapboxDraw | null>(null);
+    const boundsDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Synchronous ref so handleMapClick never queries WMS while drawing is active.
+    // React state updates are batched; this ref is updated immediately.
+    const isDrawingRef = useRef(false);
 
-    const { lng, lat, zoom, filters, showCadastre, setViewState, setShowCadastre, setFilters } = useMapStore();
+    const { lng, lat, zoom, filters, showCadastre, setViewState, setShowCadastre, setFilters, resetAll } = useMapStore();
     const { user, logout, updateUser } = useAuthStore();
 
-    const { data: savedPolygonsData, refetch: refetchPolygons } = useQuery(GET_MY_POLYGONS);
-    const [updateMapState] = useMutation(UPDATE_MAP_STATE);
-    const [savePolygon] = useMutation(SAVE_POLYGON_MUTATION);
+    // Refs keep the moveend handler in sync with the latest state without
+    // requiring the map to reinitialise on every filter or layer change
+    const filtersRef = useRef(filters);
+    const wmsLayersRef = useRef(wmsLayers);
+    useEffect(() => { filtersRef.current = filters; }, [filters]);
+    useEffect(() => { wmsLayersRef.current = wmsLayers; }, [wmsLayers]);
+
+    // Cancel drawing on Escape key
+    useEffect(() => {
+        if (!isDrawing) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            isDrawingRef.current = false;
+            draw.current?.changeMode('simple_select');
+            draw.current?.deleteAll();
+            if (map.current) map.current.getCanvas().style.cursor = '';
+            setIsDrawing(false);
+            setDrawnGeometry(null);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isDrawing]);
+
+    const { data: savedPolygonsData, refetch: refetchPolygons } = useQuery<MyPolygonsResponse>(GET_MY_POLYGONS);
+    const [updateMapState] = useMutation<UpdateMapStateResponse, UpdateMapStateVariables>(UPDATE_MAP_STATE);
+    const [savePolygon] = useMutation<SavePolygonResponse, SavePolygonVariables>(SAVE_POLYGON_MUTATION);
+    const [getForestPlots, { data: forestPlotsData, loading: forestPlotsLoading }] = useLazyQuery<ForestPlotsResponse, ForestPlotsVariables>(GET_FOREST_PLOTS);
 
     // Initialize map
     useEffect(() => {
@@ -96,6 +137,17 @@ export function ForestMap() {
         const initialLng = user?.lastLng ?? lng;
         const initialLat = user?.lastLat ?? lat;
         const initialZoom = user?.lastZoom ?? zoom;
+
+        // Restore filters from last session
+        if (user?.lastFilters && Object.keys(user.lastFilters).length > 0) {
+            setFilters(user.lastFilters as MapFilters);
+        }
+
+        // Restore layer visibility from last session
+        const restoredLayers = user?.lastActiveLayers
+            ? WMS_LAYERS.map(l => ({ ...l, visible: user.lastActiveLayers!.includes(l.id) }))
+            : WMS_LAYERS;
+        setWmsLayers(restoredLayers);
 
         map.current = new mapboxgl.Map({
             container: mapContainer.current,
@@ -107,13 +159,17 @@ export function ForestMap() {
         map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
         map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
 
-        // Initialize Mapbox Draw
+        // Initialize Mapbox Draw — no built-in buttons (we drive it from our own toolbar)
         draw.current = new MapboxDraw({
             displayControlsDefault: false,
-            controls: { polygon: true, trash: true },
+            controls: {},
             defaultMode: 'simple_select'
         });
         map.current.addControl(draw.current, 'top-right');
+
+        // Push Mapbox native controls below the navbar (52px navbar + 8px gap)
+        const ctrlTopRight = mapContainer.current!.querySelector('.mapboxgl-ctrl-top-right') as HTMLElement | null;
+        if (ctrlTopRight) ctrlTopRight.style.top = '60px';
 
         // Track zoom for layer visibility
         const updateZoom = () => {
@@ -124,26 +180,32 @@ export function ForestMap() {
 
         map.current.on('load', () => {
             setMapLoaded(true);
-            addWMSLayers(map.current!);
+            addWMSLayers(map.current!, restoredLayers);
             updateZoom();
         });
 
         map.current.on('zoom', updateZoom);
 
-        // Handle polygon creation
-        map.current.on('draw.create', (e) => {
+        // Handle polygon creation — cast to any because MapboxDraw events are not
+        // in the Mapbox GL TS type definitions
+        map.current.on('draw.create', (e: any) => {
             const geometry = e.features[0].geometry;
+            isDrawingRef.current = false;
+            map.current!.getCanvas().style.cursor = '';
             setDrawnGeometry(geometry);
             setShowSaveModal(true);
             setIsDrawing(false);
         });
 
         // Handle draw mode changes
-        map.current.on('draw.modechange', (e) => {
-            setIsDrawing(e.mode === 'draw_polygon');
+        map.current.on('draw.modechange', (e: any) => {
+            const drawing = e.mode === 'draw_polygon';
+            isDrawingRef.current = drawing;
+            if (map.current) map.current.getCanvas().style.cursor = drawing ? 'crosshair' : '';
+            setIsDrawing(drawing);
         });
 
-        // Save map state on move
+        // Save map state on move and capture viewport bounds for vector query
         map.current.on('moveend', () => {
             const center = map.current!.getCenter();
             const newZoom = map.current!.getZoom();
@@ -156,23 +218,35 @@ export function ForestMap() {
                             lng: center.lng,
                             lat: center.lat,
                             zoom: newZoom,
-                            filters,
-                            activeLayers: wmsLayers.filter(l => l.visible).map(l => l.id),
+                            filters: filtersRef.current,
+                            activeLayers: wmsLayersRef.current.filter(l => l.visible).map(l => l.id),
                         },
                     },
                 }).then((result) => {
-                    updateUser(result.data.updateMapState);
+                    if (result.data) updateUser(result.data.updateMapState);
                 }).catch(console.error);
             }
+
+            // Debounce viewport bounds update to avoid firing the plots query on every pixel
+            if (boundsDebounceRef.current) clearTimeout(boundsDebounceRef.current);
+            boundsDebounceRef.current = setTimeout(() => {
+                const b = map.current!.getBounds();
+                if (!b) return;
+                setViewportBounds({
+                    minLng: b.getWest(),
+                    minLat: b.getSouth(),
+                    maxLng: b.getEast(),
+                    maxLat: b.getNorth(),
+                });
+            }, 300);
         });
 
-        // Feature query on click (skip if drawing)
+        // Feature query on click — skip entirely while drawing to avoid WMS interference
         const handleMapClick = async (e: mapboxgl.MapMouseEvent) => {
-            if (draw.current?.getMode() === 'draw_polygon') return;
+            if (isDrawingRef.current) return;
 
             const selected = draw.current?.getSelected();
-            // @ts-ignore
-            if (selected?.features?.length > 0) return;
+            if ((selected?.features?.length ?? 0) > 0) return;
 
             setIsQuerying(true);
             const { lng, lat } = e.lngLat;
@@ -198,32 +272,28 @@ export function ForestMap() {
         setBaseLayer(layerKey);
         map.current.setStyle(BASE_LAYERS[layerKey].url);
 
-        // Re-add WMS layers after style change
+        // Re-add all layers after style change
         map.current.once('style.load', () => {
             addWMSLayers(map.current!);
             if (savedPolygonsData?.myPolygons) {
                 displaySavedPolygonsOnMap(map.current!, savedPolygonsData.myPolygons, false);
             }
+            // Re-trigger forest plots render by briefly toggling mapLoaded
+            setMapLoaded(false);
+            setTimeout(() => setMapLoaded(true), 0);
         });
     };
 
-    // Add WMS layers
-    const addWMSLayers = (mapInstance: mapboxgl.Map) => {
-        // Clean up existing layers first
-        wmsLayers.forEach((layer) => {
+    // Add WMS layers — accepts explicit layers to avoid stale closure reads
+    const addWMSLayers = (mapInstance: mapboxgl.Map, layers: WMSLayerConfig[] = wmsLayers) => {
+        layers.forEach((layer) => {
             const sourceId = `wms-${layer.id}`;
             const layerId = `wms-layer-${layer.id}`;
-
-            if (mapInstance.getLayer(layerId)) {
-                mapInstance.removeLayer(layerId);
-            }
-            if (mapInstance.getSource(sourceId)) {
-                mapInstance.removeSource(sourceId);
-            }
+            if (mapInstance.getLayer(layerId)) mapInstance.removeLayer(layerId);
+            if (mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
         });
 
-        // Add all WMS layers
-        wmsLayers.forEach((layer) => {
+        layers.forEach((layer) => {
             const sourceId = `wms-${layer.id}`;
             const layerId = `wms-layer-${layer.id}`;
 
@@ -242,7 +312,7 @@ export function ForestMap() {
                 layout: { visibility: layer.visible ? 'visible' : 'none' },
             });
         });
-        updateWMSLayerVisibility(map.current!.getZoom());
+        updateWMSLayerVisibility(mapInstance.getZoom());
     };
 
     const updateWMSLayerVisibility = (zoom: number) => {
@@ -270,9 +340,22 @@ export function ForestMap() {
 
     // Start drawing mode
     const handleDrawStart = () => {
-        if (!draw.current) return;
+        if (!draw.current || !mapLoaded) return;
+        isDrawingRef.current = true;
         draw.current.changeMode('draw_polygon');
         setIsDrawing(true);
+        if (map.current) map.current.getCanvas().style.cursor = 'crosshair';
+    };
+
+    // Cancel drawing — revert to select mode and discard any partial polygon
+    const handleDrawCancel = () => {
+        if (!draw.current) return;
+        isDrawingRef.current = false;
+        draw.current.changeMode('simple_select');
+        draw.current.deleteAll();
+        setIsDrawing(false);
+        setDrawnGeometry(null);
+        if (map.current) map.current.getCanvas().style.cursor = '';
     };
 
     // Handle polygon save
@@ -289,8 +372,7 @@ export function ForestMap() {
                 }
             });
 
-            // @ts-ignore
-            setAnalysisResult(data.savePolygon);
+            setAnalysisResult(data?.savePolygon);
             setShowResults(true);
             setShowSaveModal(false);
 
@@ -315,16 +397,93 @@ export function ForestMap() {
 
     // Display saved polygons
     useEffect(() => {
-        // @ts-ignore
         if (!map.current || !savedPolygonsData?.myPolygons || !mapLoaded) return;
 
         const timer = setTimeout(() => {
-            // @ts-ignore
             displaySavedPolygonsOnMap(map.current!, savedPolygonsData.myPolygons, false);
         }, 500);
 
         return () => clearTimeout(timer);
     }, [savedPolygonsData, mapLoaded]);
+
+    // Fire forest plots query when viewport or admin filters change — only at zoom >= 10
+    useEffect(() => {
+        if (!mapLoaded || currentZoom < 10 || !viewportBounds) return;
+        getForestPlots({
+            variables: { filters: { ...filters, bounds: viewportBounds } },
+        });
+    }, [viewportBounds, filters, mapLoaded, currentZoom]);
+
+    // Render forest plot vector layer whenever query results arrive or zoom crosses the threshold
+    useEffect(() => {
+        if (!map.current || !mapLoaded) return;
+
+        if (map.current.getLayer('forest-plots-fill')) map.current.removeLayer('forest-plots-fill');
+        if (map.current.getLayer('forest-plots-outline')) map.current.removeLayer('forest-plots-outline');
+        if (map.current.getSource('forest-plots')) map.current.removeSource('forest-plots');
+
+        if (!forestPlotsData?.forestPlots || currentZoom < 10) return;
+
+        const features = (forestPlotsData.forestPlots as any[])
+            .filter((p) => p.geometry)
+            .map((p) => ({
+                type: 'Feature' as const,
+                geometry: p.geometry,
+                properties: {
+                    id: p.id,
+                    codeCommune: p.codeCommune,
+                    lieuDit: p.lieuDit,
+                    essences: Array.isArray(p.essences) ? p.essences.join(', ') : '',
+                    surfaceHectares: p.surfaceHectares,
+                    typeForet: p.typeForet,
+                },
+            }));
+
+        if (features.length === 0) return;
+
+        map.current.addSource('forest-plots', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features } as any,
+        });
+        map.current.addLayer({
+            id: 'forest-plots-fill',
+            type: 'fill',
+            source: 'forest-plots',
+            paint: { 'fill-color': '#228B22', 'fill-opacity': 0.25 },
+        });
+        map.current.addLayer({
+            id: 'forest-plots-outline',
+            type: 'line',
+            source: 'forest-plots',
+            paint: { 'line-color': '#006400', 'line-width': 1 },
+        });
+
+        // Show plot attributes on click
+        map.current.on('click', 'forest-plots-fill', (e) => {
+            if (!e.features?.length) return;
+            const props = e.features[0].properties!;
+            new mapboxgl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(`
+                    <div style="font-family:sans-serif;font-size:13px;line-height:1.6">
+                        <strong>Forest Plot</strong><br/>
+                        <b>Commune:</b> ${props.codeCommune ?? '—'}<br/>
+                        <b>Lieu-dit:</b> ${props.lieuDit ?? '—'}<br/>
+                        <b>Type:</b> ${props.typeForet ?? '—'}<br/>
+                        <b>Essences:</b> ${props.essences || '—'}<br/>
+                        <b>Surface:</b> ${props.surfaceHectares ? props.surfaceHectares.toFixed(2) + ' ha' : '—'}
+                    </div>
+                `)
+                .addTo(map.current!);
+        });
+
+        map.current.on('mouseenter', 'forest-plots-fill', () => {
+            map.current!.getCanvas().style.cursor = 'pointer';
+        });
+        map.current.on('mouseleave', 'forest-plots-fill', () => {
+            map.current!.getCanvas().style.cursor = '';
+        });
+    }, [forestPlotsData, mapLoaded, currentZoom]);
 
     const displaySavedPolygonsOnMap = (mapInstance: mapboxgl.Map, polygons: any[], fitBounds: boolean = false) => {
         if (!mapInstance.isStyleLoaded()) {
@@ -380,30 +539,142 @@ export function ForestMap() {
     };
 
     const handleLogout = () => {
+        resetAll();
+        apolloClient.clearStore();
         logout();
         window.location.href = '/auth';
     };
 
     return (
         <div className="relative w-full h-screen bg-gray-900">
-            {/* Base Layer Control - Top Left */}
+            {/* Full-screen map canvas */}
+            <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100vh' }} />
+
+            {/* ── Navbar ───────────────────────────────────────────── */}
+            <nav className="absolute top-0 left-0 right-0 h-[52px] z-30 bg-white/96 backdrop-blur-md border-b border-gray-100 shadow-sm flex items-center px-4 gap-3">
+                <div className="flex items-center gap-2 font-semibold text-[#0b4a59] shrink-0">
+                    <TreePine size={20} />
+                    <span className="hidden sm:block text-sm">Forest BD</span>
+                </div>
+                <div className="flex-1" />
+                <button
+                    onClick={() => setShowCadastre(!showCadastre)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                        showCadastre
+                            ? 'bg-[#0b4a59] text-white border-[#0b4a59]'
+                            : 'text-gray-600 border-gray-200 hover:bg-gray-100'
+                    }`}
+                >
+                    <Layers size={14} />
+                    <span className="hidden sm:block">Cadastre</span>
+                </button>
+                {user?.email && (
+                    <span className="hidden md:block text-xs text-gray-400 truncate max-w-[160px]">{user.email}</span>
+                )}
+                <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 border border-gray-200 transition-all shrink-0"
+                >
+                    <LogOut size={14} />
+                    <span className="hidden sm:block">Logout</span>
+                </button>
+            </nav>
+
+            {/* ── Left panel: Explorer / My Zones tabs ─────────────── */}
+            <div className="absolute top-[60px] left-4 z-10 w-72 max-h-[calc(100vh-72px)] flex flex-col bg-white/96 backdrop-blur-sm rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+                <div className="flex shrink-0 p-1 m-2 bg-gray-100 rounded-xl gap-1">
+                    <button
+                        onClick={() => setLeftTab('explorer')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+                            leftTab === 'explorer'
+                                ? 'bg-white text-[#0b4a59] shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        <TreePine size={13} />
+                        Explorer
+                    </button>
+                    <button
+                        onClick={() => setLeftTab('polygons')}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+                            leftTab === 'polygons'
+                                ? 'bg-white text-[#0b4a59] shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        <MapPin size={13} />
+                        My Zones
+                    </button>
+                </div>
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                    {leftTab === 'explorer' ? (
+                        <FilterPanel onRegionSelect={handleRegionNavigate} />
+                    ) : (
+                        <SavedPolygonsList
+                            onSelectPolygon={(p) => {
+                                setAnalysisResult(p);
+                                setShowResults(true);
+                            }}
+                        />
+                    )}
+                </div>
+            </div>
+
+            {/* ── Right toolbar: Draw Zone + Layers — below Mapbox native nav (offset 56px + ~154px) ── */}
+            <div className="absolute top-[215px] right-[66px] z-10 flex flex-col gap-2 items-end">
+                <button
+                    onClick={handleDrawStart}
+                    title="Draw a forest zone to analyse species and surface area"
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg border text-sm font-medium transition-all ${
+                        isDrawing
+                            ? 'bg-[#0b4a59] text-white border-[#0b4a59]'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    }`}
+                >
+                    <Pencil size={16} />
+                    {isDrawing ? 'Drawing…' : 'Draw Zone'}
+                </button>
+                <LayerControlPanel
+                    layers={wmsLayers}
+                    onToggleLayer={handleToggleLayer}
+                    currentZoom={currentZoom}
+                />
+            </div>
+
+            {/* ── Drawing instruction banner ── */}
+            {isDrawing && (
+                <div className="absolute top-[60px] left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-none">
+                    <div className="flex items-center gap-3 bg-[#0b4a59] text-white px-5 py-2.5 rounded-full text-sm shadow-xl whitespace-nowrap">
+                        <span className="w-2 h-2 bg-white rounded-full animate-pulse shrink-0" />
+                        Click to add points · Double-click to close the polygon
+                    </div>
+                    <button
+                        onClick={handleDrawCancel}
+                        className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 bg-white text-gray-700 rounded-full text-xs font-medium shadow-xl border border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all whitespace-nowrap"
+                    >
+                        ✕ Cancel
+                    </button>
+                </div>
+            )}
+
+            {/* ── Base layer selector (bottom-right) ── */}
             <div className="absolute bottom-4 right-4 z-10">
-                <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2">
-                    <div className="text-xs font-semibold text-gray-500 mb-2 px-1">Base Map</div>
-                    <div className="flex flex-col gap-1">
+                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-2">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1.5">Base Map</p>
+                    <div className="flex flex-col gap-0.5">
                         {(Object.keys(BASE_LAYERS) as Array<keyof typeof BASE_LAYERS>).map((key) => {
                             const { label, icon: Icon } = BASE_LAYERS[key];
                             return (
                                 <button
                                     key={key}
                                     onClick={() => handleBaseLayerChange(key)}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                                         baseLayer === key
                                             ? 'bg-[#0b4a59] text-white'
-                                            : 'hover:bg-gray-100 text-gray-700'
+                                            : 'text-gray-600 hover:bg-gray-100'
                                     }`}
                                 >
-                                    <Icon size={16} />
+                                    <Icon size={14} />
                                     {label}
                                 </button>
                             );
@@ -412,24 +683,7 @@ export function ForestMap() {
                 </div>
             </div>
 
-            <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100vh' }} />
-
-            <FilterPanel onRegionSelect={handleRegionNavigate} />
-
-            <LayerControlPanel
-                layers={wmsLayers}
-                onToggleLayer={handleToggleLayer}
-                currentZoom={currentZoom}
-                onDrawStart={handleDrawStart}
-                isDrawing={isDrawing}
-            />
-
-            <SavedPolygonsList onSelectPolygon={(p) => {
-                setAnalysisResult(p);
-                setShowResults(true);
-            }} />
-
-            {/* Save Polygon Modal */}
+            {/* ── Modals ── */}
             {showSaveModal && drawnGeometry && (
                 <SavePolygonModal
                     geometry={drawnGeometry}
@@ -442,7 +696,6 @@ export function ForestMap() {
                 />
             )}
 
-            {/* Analysis Results Panel */}
             {showResults && analysisResult && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <PolygonResultsPanel
@@ -452,12 +705,8 @@ export function ForestMap() {
                 </div>
             )}
 
-            {/* Feature Query Popup */}
             {queryPopup?.visible && (
-                <div
-                    className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
-                    style={{ zIndex: 50 }}
-                >
+                <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
                     <div className="pointer-events-auto">
                         <FeatureQueryPopup
                             lng={queryPopup.lng}
@@ -481,36 +730,30 @@ export function ForestMap() {
                 </div>
             )}
 
-            {/* Query Loading Indicator */}
+            {/* ── Status indicators ── */}
             {isQuerying && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-white rounded-lg shadow-lg px-4 py-2">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-white rounded-lg shadow-lg px-4 py-2.5">
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                         <div className="w-4 h-4 border-2 border-[#0b4a59] border-t-transparent rounded-full animate-spin" />
-                        Querying layers...
+                        Querying layers…
                     </div>
                 </div>
             )}
 
-            {/* Top Right Controls */}
-            <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-                <button
-                    onClick={() => setShowCadastre(!showCadastre)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg border transition-all text-sm ${
-                        showCadastre ? 'bg-[#0b4a59] text-white border-[#0b4a59]' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-                    }`}
-                >
-                    <Layers size={18} />
-                    <span className="font-medium">Cadastre</span>
-                </button>
+            {forestPlotsLoading && currentZoom >= 10 && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-white rounded-full shadow-lg px-4 py-1.5 border border-gray-100">
+                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                        <div className="w-3 h-3 border-2 border-[#228B22] border-t-transparent rounded-full animate-spin" />
+                        Loading forest plots…
+                    </div>
+                </div>
+            )}
 
-                <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 px-3 py-2 bg-white text-red-600 rounded-lg shadow-lg border border-gray-200 hover:bg-red-50 transition-all text-sm"
-                >
-                    <LogOut size={18} />
-                    <span className="font-medium">Logout</span>
-                </button>
-            </div>
+            {currentZoom < 10 && mapLoaded && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 bg-black/60 text-white text-xs rounded-full px-4 py-1.5 pointer-events-none backdrop-blur-sm">
+                    Zoom in past level 10 to load forest plot data
+                </div>
+            )}
         </div>
     );
 }

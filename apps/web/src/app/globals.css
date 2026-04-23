@@ -1,68 +1,108 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-@reference "tailwindcss";
+@import "tailwindcss";
 
 :root {
-    --foreground-rgb: 0, 0, 0;
-    --background-start-rgb: 214, 219, 220;
-    --background-end-rgb: 255, 255, 255;
+    --brand: #0b4a59;
+    --brand-dark: #083845;
+    --brand-light: #0d5a6b;
+    --brand-muted: rgba(11, 74, 89, 0.08);
+    --brand-muted-hover: rgba(11, 74, 89, 0.14);
 }
 
 @layer base {
     * {
-        border-color: #e5e7eb;;
+        border-color: #e5e7eb;
     }
 
     body {
-        @apply antialiased;
+        @apply antialiased bg-gray-50 text-gray-900;
     }
 }
 
 @layer components {
+    /* ─── Form inputs ─────────────────────────────────────────── */
+    .input-field {
+        @apply w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl
+               text-sm text-gray-900 placeholder:text-gray-400
+               outline-none ring-0
+               focus:border-[#0b4a59] focus:ring-2 focus:ring-[#0b4a59]/20
+               transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .select-field {
+        @apply w-full px-3 py-2.5 bg-white border border-gray-200 rounded-xl
+               text-sm text-gray-900
+               outline-none appearance-none cursor-pointer
+               focus:border-[#0b4a59] focus:ring-2 focus:ring-[#0b4a59]/20
+               transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    }
+
+    .btn-primary {
+        @apply w-full px-4 py-2.5 rounded-xl font-semibold text-sm text-white
+               flex items-center justify-center gap-2
+               transition-all duration-150
+               disabled:opacity-50 disabled:cursor-not-allowed;
+        background-color: var(--brand);
+    }
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--brand-dark);
+    }
+    .btn-primary:active:not(:disabled) {
+        transform: translateY(1px);
+    }
+
+    /* ─── Card ────────────────────────────────────────────────── */
+    .glass-card {
+        @apply bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl
+               border border-white/60;
+    }
+
+    /* ─── Mapbox overrides ────────────────────────────────────── */
     .mapboxgl-popup-content {
-        @apply rounded-lg shadow-lg p-0 overflow-hidden;
+        @apply rounded-xl shadow-2xl p-0 overflow-hidden border border-gray-100;
     }
 
     .mapboxgl-popup-close-button {
-        @apply text-gray-500 hover:text-gray-700 p-1 right-2 top-2 text-lg;
+        @apply text-gray-400 hover:text-gray-600 p-1.5 right-2 top-2 text-base
+               transition-colors rounded-lg hover:bg-gray-100;
     }
 
     .mapboxgl-ctrl-group {
-        @apply rounded-lg shadow-lg border border-gray-200 overflow-hidden;
+        @apply rounded-xl shadow-lg border border-gray-200 overflow-hidden;
     }
 
     .mapboxgl-ctrl-group button {
-        @apply w-8 h-8 flex items-center justify-center hover:bg-gray-50 transition-colors;
+        @apply w-9 h-9 flex items-center justify-center hover:bg-gray-50 transition-colors;
     }
 }
 
-/* Custom scrollbar */
+/* ─── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
-
 ::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded;
+    background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded hover:bg-gray-400 transition-colors;
+    @apply bg-gray-200 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-300;
 }
 
-/* Animation utilities */
-.animate-in {
-    animation: animateIn 0.2s ease-out;
+/* ─── Animations ──────────────────────────────────────────────── */
+@keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
-@keyframes animateIn {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.animate-fade-up {
+    animation: fadeUp 0.2s ease-out both;
+}
+.animate-fade-in {
+    animation: fadeIn 0.15s ease-out both;
 }
