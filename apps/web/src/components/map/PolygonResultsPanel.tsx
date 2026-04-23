@@ -48,7 +48,7 @@ export function PolygonResultsPanel({ result, onClose }: PolygonResultsPanelProp
 
     const totalForestArea = stats.totalForestArea || 0;
     const coveragePercentage = stats.coveragePercentage || 0;
-    const hasData = sortedSpecies.length > 0;
+    const hasData = sortedSpecies.length > 0 || (stats.plotCount ?? 0) > 0;
 
     return (
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
@@ -104,14 +104,16 @@ export function PolygonResultsPanel({ result, onClose }: PolygonResultsPanelProp
                         </p>
                     </div>
 
-                    {/* Species Count */}
+                    {/* Species / Types Count */}
                     <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 border border-amber-200">
                         <div className="flex items-center gap-2 text-amber-700 mb-2">
                             <Leaf size={16} />
-                            <span className="text-xs font-bold uppercase tracking-wide">Species</span>
+                            <span className="text-xs font-bold uppercase tracking-wide">
+                                {sortedSpecies.length > 0 ? 'Species' : 'Types'}
+                            </span>
                         </div>
                         <p className="text-2xl font-bold text-gray-900">
-                            {sortedSpecies.length}
+                            {sortedSpecies.length > 0 ? sortedSpecies.length : (stats.forestTypes?.length ?? 0)}
                         </p>
                         <p className="text-xs text-amber-600 font-medium mt-1">
                             {stats.plotCount || 0} forest plots
@@ -140,7 +142,7 @@ export function PolygonResultsPanel({ result, onClose }: PolygonResultsPanelProp
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                     <div className="flex items-center gap-2 mb-4">
                         <BarChart3 size={20} className="text-[#0b4a59]" />
-                        <h4 className="font-semibold text-gray-900">Tree Species Distribution</h4>
+                        <h4 className="font-semibold text-gray-900">Forest Composition</h4>
                     </div>
 
                     {!hasData ? (
@@ -202,8 +204,8 @@ export function PolygonResultsPanel({ result, onClose }: PolygonResultsPanelProp
                     <div className="bg-[#0b4a59]/5 rounded-xl p-4 border border-[#0b4a59]/20">
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="flex justify-between">
-                                <span className="text-gray-600">Total Species:</span>
-                                <span className="font-semibold text-[#0b4a59]">{sortedSpecies.length}</span>
+                                <span className="text-gray-600">Forest Types:</span>
+                                <span className="font-semibold text-[#0b4a59]">{stats.forestTypes?.length ?? sortedSpecies.length}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-gray-600">Forest Plots:</span>

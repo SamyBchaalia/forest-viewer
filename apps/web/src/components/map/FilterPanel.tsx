@@ -18,9 +18,10 @@ import type {
 import { TreePine, RotateCcw, ChevronDown, Loader2 } from 'lucide-react';
 
 const REGIONS = [
-    { code: 'NORMANDIE',         name: 'Normandie',          lat: 49.1829, lng: 0.3700,  zoom: 7 },
-    { code: 'PAYS_DE_LA_LOIRE',  name: 'Pays de la Loire',   lat: 47.7633, lng: -0.3297, zoom: 7 },
-    { code: 'CENTRE_VAL_DE_LOIRE', name: 'Centre-Val de Loire', lat: 47.7516, lng: 1.6751, zoom: 7 },
+    { code: 'NORMANDIE',              name: 'Normandie',              lat: 49.1829, lng:  0.3700,  zoom: 7 },
+    { code: 'PAYS_DE_LA_LOIRE',       name: 'Pays de la Loire',       lat: 47.7633, lng: -0.3297,  zoom: 7 },
+    { code: 'CENTRE_VAL_DE_LOIRE',    name: 'Centre-Val de Loire',    lat: 47.7516, lng:  1.6751,  zoom: 7 },
+    { code: 'AUVERGNE_RHONE_ALPES',   name: 'Auvergne-Rhône-Alpes',  lat: 45.7597, lng:  4.8422,  zoom: 7 },
 ];
 
 interface FilterPanelProps {
